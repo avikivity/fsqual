@@ -10,9 +10,10 @@
 #include <iostream>
 #include <unistd.h>
 #include <cstdlib>
+#include <type_traits>
 
 template <typename Counter, typename Func>
-auto
+typename std::result_of<Func()>::type
 with_ctxsw_counting(Counter& counter, Func&& func) {
     struct count_guard {
         Counter& counter;
