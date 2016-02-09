@@ -16,6 +16,10 @@ Install the following packages:
  * `gcc-c++` (`g++` on Debian and derivatives)
  * `make`
 
+To build, simply run
+
+    make
+
 ## Running
 
 Change to a directory under the mountpoint to be tested, and run `fsqual`.
