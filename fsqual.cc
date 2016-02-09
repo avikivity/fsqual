@@ -53,5 +53,9 @@ int main(int ac, char** av) {
         struct io_event ioev;
         io_getevents(ioctx, 1, 1, &ioev, nullptr);
     }
-    std::cout << "context switch per appending io: " << float(ctxsw) / nr << "\n";
+    auto rate = float(ctxsw) / nr;
+    auto verdict = rate < 0.1 ? "GOOD" : "BAD";
+    std::cout << "context switch per appending io: " << rate
+	      << " (" << verdict << ")\n";
+    return 0;
 }
