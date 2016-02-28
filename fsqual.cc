@@ -86,5 +86,6 @@ void run_test(std::function<void (io_context_t ioctx, int fd)> func) {
 
 int main(int ac, char** av) {
     run_test(test_append);
+    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 3); });
     return 0;
 }
