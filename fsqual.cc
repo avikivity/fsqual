@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <type_traits>
+#include <functional>
 
 template <typename Counter, typename Func>
 typename std::result_of<Func()>::type
@@ -33,12 +34,7 @@ with_ctxsw_counting(Counter& counter, Func&& func) {
     return func();
 }
 
-int main(int ac, char** av) {
-    io_context_t ioctx = {};
-    io_setup(1, &ioctx);
-    auto fname = "fsqual.tmp";
-    int fd = open(fname, O_CREAT|O_EXCL|O_RDWR|O_DIRECT, 0600);
-    unlink(fname);
+void test_append(io_context_t ioctx, int fd) {
     auto nr = 1000;
     auto bufsize = 4096;
     auto ctxsw = 0;
@@ -56,6 +52,21 @@ int main(int ac, char** av) {
     auto rate = float(ctxsw) / nr;
     auto verdict = rate < 0.1 ? "GOOD" : "BAD";
     std::cout << "context switch per appending io: " << rate
-	      << " (" << verdict << ")\n";
+          << " (" << verdict << ")\n";
+}
+
+void run_test(std::function<void (io_context_t ioctx, int fd)> func) {
+    io_context_t ioctx = {};
+    io_setup(1, &ioctx);
+    auto fname = "fsqual.tmp";
+    int fd = open(fname, O_CREAT|O_EXCL|O_RDWR|O_DIRECT, 0600);
+    unlink(fname);
+    func(ioctx, fd);
+    close(fd);
+    io_destroy(ioctx);
+}
+
+int main(int ac, char** av) {
+    run_test(test_append);
     return 0;
 }
