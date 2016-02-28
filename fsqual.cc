@@ -37,7 +37,7 @@ with_ctxsw_counting(Counter& counter, Func&& func) {
 }
 
 void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth) {
-    auto nr = 1000;
+    auto nr = 10000;
     auto bufsize = 4096;
     auto ctxsw = 0;
     auto buf = aligned_alloc(4096, 4096);
