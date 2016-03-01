@@ -6,6 +6,7 @@
 #include <libaio.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <sys/mman.h>
 #include <fcntl.h>
 #include <iostream>
 #include <unistd.h>
@@ -14,6 +15,7 @@
 #include <functional>
 #include <vector>
 #include <algorithm>
+#include <stdint.h>
 
 template <typename Counter, typename Func>
 typename std::result_of<Func()>::type
@@ -67,6 +69,12 @@ void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth) {
     auto verdict = rate < 0.1 ? "GOOD" : "BAD";
     std::cout << "context switch per appending io (iodepth " << iodepth << "): " << rate
           << " (" << verdict << ")\n";
+    auto ptr = mmap(nullptr, nr * 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+    auto incore = std::vector<uint8_t>(nr);
+    mincore(ptr, nr * 4096, incore.data());
+    if (std::any_of(incore.begin(), incore.end(), [] (uint8_t m) { return m & 1; })) {
+        std::cout << "Seen data in page cache (BAD)\n";
+    }
 }
 
 void test_append(io_context_t ioctx, int fd) {
