@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <random>
 #include <stdint.h>
+#define min min    /* prevent xfs.h from defining min() as a macro */
+#include <xfs/xfs.h>
 
 template <typename Counter, typename Func>
 typename std::result_of<Func()>::type
@@ -90,6 +92,11 @@ void run_test(std::function<void (io_context_t ioctx, int fd)> func) {
     io_setup(128, &ioctx);
     auto fname = "fsqual.tmp";
     int fd = open(fname, O_CREAT|O_EXCL|O_RDWR|O_DIRECT, 0600);
+    fsxattr attr = {};
+    attr.fsx_xflags |= XFS_XFLAG_EXTSIZE;
+    attr.fsx_extsize = 32 << 20; // 32MB
+    // Ignore error; may be !xfs, and just a hint anyway
+    ::ioctl(fd, XFS_IOC_FSSETXATTR, &attr);
     unlink(fname);
     func(ioctx, fd);
     close(fd);
