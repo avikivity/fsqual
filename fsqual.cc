@@ -80,6 +80,11 @@ void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, std::s
     }
 }
 
+void test_concurrent_append_size_unchanging(io_context_t ioctx, int fd, unsigned iodepth, std::string mode) {
+    ftruncate(fd, off_t(1) << 30);
+    test_concurrent_append(ioctx, fd, iodepth, mode);
+}
+
 void run_test(std::function<void (io_context_t ioctx, int fd)> func) {
     io_context_t ioctx = {};
     io_setup(128, &ioctx);
@@ -94,9 +99,7 @@ void run_test(std::function<void (io_context_t ioctx, int fd)> func) {
 int main(int ac, char** av) {
     run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 1, "size-changing"); });
     run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 3, "size-changing"); });
-    run_test([] (io_context_t ioctx, int fd) {
-        ftruncate(fd, off_t(1) << 30);
-        test_concurrent_append(ioctx, fd, 3, "size-unchanging");
-    });
+    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append_size_unchanging(ioctx, fd, 3, "size-unchanging"); });
+    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append_size_unchanging(ioctx, fd, 7, "size-unchanging"); });
     return 0;
 }
