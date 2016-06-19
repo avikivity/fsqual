@@ -38,7 +38,7 @@ with_ctxsw_counting(Counter& counter, Func&& func) {
     return func();
 }
 
-void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth) {
+void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, std::string mode) {
     auto nr = 10000;
     auto bufsize = 4096;
     auto ctxsw = 0;
@@ -67,7 +67,7 @@ void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth) {
     }
     auto rate = float(ctxsw) / nr;
     auto verdict = rate < 0.1 ? "GOOD" : "BAD";
-    std::cout << "context switch per appending io (iodepth " << iodepth << "): " << rate
+    std::cout << "context switch per appending io (mode " << mode << ", iodepth " << iodepth << "): " << rate
           << " (" << verdict << ")\n";
     auto ptr = mmap(nullptr, nr * 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
     auto incore = std::vector<uint8_t>(nr);
@@ -75,10 +75,6 @@ void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth) {
     if (std::any_of(incore.begin(), incore.end(), [] (uint8_t m) { return m & 1; })) {
         std::cout << "Seen data in page cache (BAD)\n";
     }
-}
-
-void test_append(io_context_t ioctx, int fd) {
-    return test_concurrent_append(ioctx, fd, 1);
 }
 
 void run_test(std::function<void (io_context_t ioctx, int fd)> func) {
@@ -93,11 +89,11 @@ void run_test(std::function<void (io_context_t ioctx, int fd)> func) {
 }
 
 int main(int ac, char** av) {
-    run_test(test_append);
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 3); });
+    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 1, "size-changing"); });
+    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 3, "size-changing"); });
     run_test([] (io_context_t ioctx, int fd) {
         ftruncate(fd, off_t(1) << 30);
-        test_concurrent_append(ioctx, fd, 3);
+        test_concurrent_append(ioctx, fd, 3, "size-unchanging");
     });
     return 0;
 }
