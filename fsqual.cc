@@ -15,6 +15,7 @@
 #include <functional>
 #include <vector>
 #include <algorithm>
+#include <random>
 #include <stdint.h>
 
 template <typename Counter, typename Func>
@@ -50,12 +51,14 @@ void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, std::s
     auto iocbps = std::vector<iocb*>(iodepth);
     std::iota(iocbps.begin(), iocbps.end(), iocbs.data());
     auto ioevs = std::vector<io_event>(iodepth);
+    std::random_device random_device;
     while (completed < nr) {
         auto i = unsigned(0);
         while (initiated < nr && current_depth < iodepth) {
             io_prep_pwrite(&iocbs[i++], fd, buf, bufsize, bufsize*initiated++);
             ++current_depth;
         }
+        std::shuffle(iocbs.begin(), iocbs.begin() + i, random_device);
         if (i) {
             with_ctxsw_counting(ctxsw, [&] {
                 io_submit(ioctx, i, iocbps.data());
