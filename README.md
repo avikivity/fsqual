@@ -8,6 +8,7 @@ See this [blog post](http://www.scylladb.com/2016/02/09/qualifying-filesystems/)
 
 Currently tested attributes are:
  * Asycnhronous appending write
+ * Asycnhronous allocating, but non-appending write
 
 ## Building
 
