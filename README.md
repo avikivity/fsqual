@@ -13,7 +13,8 @@ Currently tested attributes are:
 ## Building
 
 Install the following packages:
- * `libaio-devel` (`libaio-dev1` on Debian and derivatives)
+ * `libaio-devel` (`libaio-dev` on Debian and derivatives)
+ * `xfsprogs-devel.x86_64` (`xfslibs-dev` on Debian and derivatives)
  * `gcc-c++` (`g++` on Debian and derivatives)
  * `make`
 
