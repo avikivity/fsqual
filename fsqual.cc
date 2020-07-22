@@ -41,7 +41,7 @@ with_ctxsw_counting(Counter& counter, Func&& func) {
     return func();
 }
 
-void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, std::string mode) {
+void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, std::string mode, bool nowait) {
     auto nr = 10000;
     auto bufsize = 4096;
     auto ctxsw = 0;
@@ -57,7 +57,11 @@ void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, std::s
     while (completed < nr) {
         auto i = unsigned(0);
         while (initiated < nr && current_depth < iodepth) {
-            io_prep_pwrite(&iocbs[i++], fd, buf, bufsize, bufsize*initiated++);
+            io_prep_pwrite(&iocbs[i], fd, buf, bufsize, bufsize*initiated++);
+            if (nowait) {
+                iocbs[i].aio_rw_flags |= RWF_NOWAIT;
+            }
+            ++i;
             ++current_depth;
         }
         std::shuffle(iocbs.begin(), iocbs.begin() + i, random_device);
@@ -82,9 +86,9 @@ void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, std::s
     }
 }
 
-void test_concurrent_append_size_unchanging(io_context_t ioctx, int fd, unsigned iodepth, std::string mode) {
+void test_concurrent_append_size_unchanging(io_context_t ioctx, int fd, unsigned iodepth, std::string mode, bool nowait) {
     ftruncate(fd, off_t(1) << 30);
-    test_concurrent_append(ioctx, fd, iodepth, mode);
+    test_concurrent_append(ioctx, fd, iodepth, mode, nowait);
 }
 
 void run_test(std::function<void (io_context_t ioctx, int fd)> func) {
@@ -120,11 +124,31 @@ void test_dio_info() {
     }
 }
 
+static void show_usage(std::string program_name) {
+    std::cerr << "Usage: " << program_name << " <option(s)>\n"
+              << "Options:\n"
+              << "\t-h,--help\t\tShow this help message\n"
+              << "\t--nowait\tUse NOWAIT (RWF_NOWAIT) for qualification"
+              << std::endl;
+}
+
 int main(int ac, char** av) {
+    bool nowait = false;
+
+    for (int i = 1; i < ac; ++i) {
+        std::string arg = av[i];
+        if ((arg == "-h") || (arg == "--help")) {
+            show_usage(av[0]);
+            return 0;
+        } else if (arg == "--nowait") {
+            nowait = true;
+        }
+    }
+
     test_dio_info();
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 1, "size-changing"); });
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 3, "size-changing"); });
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append_size_unchanging(ioctx, fd, 3, "size-unchanging"); });
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append_size_unchanging(ioctx, fd, 7, "size-unchanging"); });
+    run_test([&] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 1, "size-changing", nowait); });
+    run_test([&] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 3, "size-changing", nowait); });
+    run_test([&] (io_context_t ioctx, int fd) { test_concurrent_append_size_unchanging(ioctx, fd, 3, "size-unchanging", nowait); });
+    run_test([&] (io_context_t ioctx, int fd) { test_concurrent_append_size_unchanging(ioctx, fd, 7, "size-unchanging", nowait); });
     return 0;
 }
