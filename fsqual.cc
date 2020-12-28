@@ -85,6 +85,7 @@ void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, size_t
     if (prezero) {
         mode += ", prezero";
     }
+    mode += ", blocksize " + std::to_string(bufsize);
     std::cout << "context switch per appending io (mode " << mode << ", iodepth " << iodepth << "): " << rate
           << " (" << verdict << ")\n";
     auto ptr = mmap(nullptr, nr * 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
