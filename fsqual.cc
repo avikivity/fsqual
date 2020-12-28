@@ -41,7 +41,7 @@ with_ctxsw_counting(Counter& counter, Func&& func) {
     return func();
 }
 
-void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, size_t bufsize, bool pretruncate) {
+void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero) {
     if (pretruncate) {
         ftruncate(fd, off_t(1) << 30);
     }
@@ -55,6 +55,13 @@ void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, size_t
     auto iocbps = std::vector<iocb*>(iodepth);
     std::iota(iocbps.begin(), iocbps.end(), iocbs.data());
     auto ioevs = std::vector<io_event>(iodepth);
+    if (prezero) {
+        auto buf = reinterpret_cast<char*>(aligned_alloc(4096, nr*bufsize));
+        std::fill_n(buf, nr*bufsize, char(0));
+        write(fd, buf, nr*bufsize);
+        fdatasync(fd);
+        free(buf);
+    }
     std::random_device random_device;
     while (completed < nr) {
         auto i = unsigned(0);
@@ -75,6 +82,9 @@ void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, size_t
     auto rate = float(ctxsw) / nr;
     auto verdict = rate < 0.1 ? "GOOD" : "BAD";
     auto mode = std::string(pretruncate ? "size-changing" : "size-unchanging");
+    if (prezero) {
+        mode += ", prezero";
+    }
     std::cout << "context switch per appending io (mode " << mode << ", iodepth " << iodepth << "): " << rate
           << " (" << verdict << ")\n";
     auto ptr = mmap(nullptr, nr * 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
@@ -128,10 +138,11 @@ int main(int ac, char** av) {
     std::cout << "memory DMA alignment:    " << info.memory_alignment << "\n";
     std::cout << "disk DMA alignment:      " << info.disk_alignment << "\n";
 
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 1, 4096, false); });
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 3, 4096, false); });
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 3, 4096, true); });
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 7, 4096, true); });
-    run_test([=] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 1, info.disk_alignment, true); });
+    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 1, 4096, false, false); });
+    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 3, 4096, false, false); });
+    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 3, 4096, true, false); });
+    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 7, 4096, true, false); });
+    run_test([=] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 1, info.disk_alignment, true, false); });
+    run_test([=] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 1, info.disk_alignment, true, true); });
     return 0;
 }
