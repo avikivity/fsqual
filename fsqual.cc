@@ -81,7 +81,7 @@ void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, size_t
     }
     auto rate = float(ctxsw) / nr;
     auto verdict = rate < 0.1 ? "GOOD" : "BAD";
-    auto mode = std::string(pretruncate ? "size-changing" : "size-unchanging");
+    auto mode = std::string(pretruncate ? "size-unchanging" : "size-changing");
     if (prezero) {
         mode += ", prezero";
     }
