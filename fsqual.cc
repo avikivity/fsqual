@@ -103,25 +103,33 @@ void run_test(std::function<void (io_context_t ioctx, int fd)> func) {
     io_destroy(ioctx);
 }
 
-void test_dio_info() {
+struct dio_info {
+    size_t memory_alignment;
+    size_t disk_alignment;
+};
+
+dio_info get_dio_info() {
     auto fname = "fsqual.tmp";
     int fd = open(fname, O_CREAT|O_EXCL|O_RDWR|O_DIRECT, 0600);
     if (fd == -1) {
         std::cout << "failed to create file\n";
-        return;
+        return {512, 512};
     }
     unlink(fname);
     struct dioattr da;
     auto r = ioctl(fd, XFS_IOC_DIOINFO, &da);
-    if (r == 0) {
-        std::cout << "memory DMA alignment:         " << da.d_mem << "\n";
-        std::cout << "disk DMA read alignment:      " << da.d_miniosz << "\n";
-        std::cout << "disk DMA write alignment:      " << da.d_miniosz << "\n";
+    if (r == -1) {
+        std::cout << "XFS_IOC_DIOINFO failed, guessing alignment\n";
+        return dio_info{512, 512};
     }
+    return dio_info{da.d_mem, da.d_miniosz};
 }
 
 int main(int ac, char** av) {
-    test_dio_info();
+    auto info = get_dio_info();
+    std::cout << "memory DMA alignment:    " << info.memory_alignment << "\n";
+    std::cout << "disk DMA alignment:      " << info.disk_alignment << "\n";
+
     run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 1, "size-changing"); });
     run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 3, "size-changing"); });
     run_test([] (io_context_t ioctx, int fd) { test_concurrent_append_size_unchanging(ioctx, fd, 3, "size-unchanging"); });
