@@ -41,11 +41,10 @@ with_ctxsw_counting(Counter& counter, Func&& func) {
     return func();
 }
 
-void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, std::string mode) {
+void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, size_t bufsize, std::string mode) {
     auto nr = 10000;
-    auto bufsize = 4096;
     auto ctxsw = 0;
-    auto buf = aligned_alloc(4096, 4096);
+    auto buf = aligned_alloc(4096, bufsize);
     auto current_depth = unsigned(0);
     auto initiated = 0;
     auto completed = 0;
@@ -82,9 +81,9 @@ void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, std::s
     }
 }
 
-void test_concurrent_append_size_unchanging(io_context_t ioctx, int fd, unsigned iodepth, std::string mode) {
+void test_concurrent_append_size_unchanging(io_context_t ioctx, int fd, unsigned iodepth, size_t bufsize, std::string mode) {
     ftruncate(fd, off_t(1) << 30);
-    test_concurrent_append(ioctx, fd, iodepth, mode);
+    test_concurrent_append(ioctx, fd, iodepth, bufsize, mode);
 }
 
 void run_test(std::function<void (io_context_t ioctx, int fd)> func) {
@@ -130,9 +129,10 @@ int main(int ac, char** av) {
     std::cout << "memory DMA alignment:    " << info.memory_alignment << "\n";
     std::cout << "disk DMA alignment:      " << info.disk_alignment << "\n";
 
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 1, "size-changing"); });
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 3, "size-changing"); });
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append_size_unchanging(ioctx, fd, 3, "size-unchanging"); });
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append_size_unchanging(ioctx, fd, 7, "size-unchanging"); });
+    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 1, 4096, "size-changing"); });
+    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 3, 4096, "size-changing"); });
+    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append_size_unchanging(ioctx, fd, 3, 4096, "size-unchanging"); });
+    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append_size_unchanging(ioctx, fd, 7, 4096, "size-unchanging"); });
+    run_test([=] (io_context_t ioctx, int fd) { test_concurrent_append_size_unchanging(ioctx, fd, 1, info.disk_alignment, "size-unchanging, sector aligned"); });
     return 0;
 }
