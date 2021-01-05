@@ -41,7 +41,17 @@ with_ctxsw_counting(Counter& counter, Func&& func) {
     return func();
 }
 
-void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero) {
+void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero) {
+    io_context_t ioctx = {};
+    io_setup(128, &ioctx);
+    auto fname = "fsqual.tmp";
+    int fd = open(fname, O_CREAT|O_EXCL|O_RDWR|O_DIRECT, 0600);
+    fsxattr attr = {};
+    attr.fsx_xflags |= XFS_XFLAG_EXTSIZE;
+    attr.fsx_extsize = 32 << 20; // 32MB
+    // Ignore error; may be !xfs, and just a hint anyway
+    ::ioctl(fd, XFS_IOC_FSSETXATTR, &attr);
+    unlink(fname);
     if (pretruncate) {
         ftruncate(fd, off_t(1) << 30);
     }
@@ -94,20 +104,6 @@ void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, size_t
     if (std::any_of(incore.begin(), incore.end(), [] (uint8_t m) { return m & 1; })) {
         std::cout << "Seen data in page cache (BAD)\n";
     }
-}
-
-void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero) {
-    io_context_t ioctx = {};
-    io_setup(128, &ioctx);
-    auto fname = "fsqual.tmp";
-    int fd = open(fname, O_CREAT|O_EXCL|O_RDWR|O_DIRECT, 0600);
-    fsxattr attr = {};
-    attr.fsx_xflags |= XFS_XFLAG_EXTSIZE;
-    attr.fsx_extsize = 32 << 20; // 32MB
-    // Ignore error; may be !xfs, and just a hint anyway
-    ::ioctl(fd, XFS_IOC_FSSETXATTR, &attr);
-    unlink(fname);
-    test_concurrent_append(ioctx, fd, iodepth, bufsize, pretruncate, prezero);
     close(fd);
     io_destroy(ioctx);
 }
