@@ -94,13 +94,15 @@ void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, 
     auto verdict = rate < 0.1 ? "GOOD" : "BAD";
     auto mode = std::string(pretruncate ? "size-unchanging" : "size-changing");
     if (prezero) {
-        mode += ", prezero";
+        mode += ", overwrite";
+    } else {
+        mode += ", append";
     }
     mode += ", blocksize " + std::to_string(bufsize);
     if (dsync) {
         mode += ", O_DSYNC";
     }
-    std::cout << "context switch per appending io (mode " << mode << ", iodepth " << iodepth << "): " << rate
+    std::cout << "context switch per io (mode " << mode << ", iodepth " << iodepth << "): " << rate
           << " (" << verdict << ")\n";
     auto ptr = mmap(nullptr, nr * 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
     auto incore = std::vector<uint8_t>(nr);
