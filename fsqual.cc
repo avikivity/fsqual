@@ -96,7 +96,7 @@ void test_concurrent_append(io_context_t ioctx, int fd, unsigned iodepth, size_t
     }
 }
 
-void run_test(std::function<void (io_context_t ioctx, int fd)> func) {
+void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero) {
     io_context_t ioctx = {};
     io_setup(128, &ioctx);
     auto fname = "fsqual.tmp";
@@ -107,7 +107,7 @@ void run_test(std::function<void (io_context_t ioctx, int fd)> func) {
     // Ignore error; may be !xfs, and just a hint anyway
     ::ioctl(fd, XFS_IOC_FSSETXATTR, &attr);
     unlink(fname);
-    func(ioctx, fd);
+    test_concurrent_append(ioctx, fd, iodepth, bufsize, pretruncate, prezero);
     close(fd);
     io_destroy(ioctx);
 }
@@ -139,11 +139,11 @@ int main(int ac, char** av) {
     std::cout << "memory DMA alignment:    " << info.memory_alignment << "\n";
     std::cout << "disk DMA alignment:      " << info.disk_alignment << "\n";
 
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 1, 4096, false, false); });
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 3, 4096, false, false); });
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 3, 4096, true, false); });
-    run_test([] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 7, 4096, true, false); });
-    run_test([=] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 1, info.disk_alignment, true, false); });
-    run_test([=] (io_context_t ioctx, int fd) { test_concurrent_append(ioctx, fd, 1, info.disk_alignment, true, true); });
+    run_test(1, 4096, false, false);
+    run_test(3, 4096, false, false);
+    run_test(3, 4096, true, false);
+    run_test(7, 4096, true, false);
+    run_test(1, info.disk_alignment, true, false);
+    run_test(1, info.disk_alignment, true, true);
     return 0;
 }
