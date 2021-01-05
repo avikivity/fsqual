@@ -42,7 +42,12 @@ with_ctxsw_counting(Counter& counter, Func&& func) {
     return func();
 }
 
-void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, bool dsync) {
+enum class direction {
+    read,
+    write,
+};
+
+void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, bool dsync, direction dir) {
     io_context_t ioctx = {};
     io_setup(128, &ioctx);
     auto fname = "fsqual.tmp";
@@ -67,7 +72,7 @@ void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, 
     auto iocbps = std::vector<iocb*>(iodepth);
     std::iota(iocbps.begin(), iocbps.end(), iocbs.data());
     auto ioevs = std::vector<io_event>(iodepth);
-    if (prezero) {
+    if (prezero || dir == direction::read) {
         auto buf = reinterpret_cast<char*>(aligned_alloc(4096, nr*bufsize));
         std::fill_n(buf, nr*bufsize, char(0));
         write(fd, buf, nr*bufsize);
@@ -78,7 +83,11 @@ void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, 
     while (completed < nr) {
         auto i = unsigned(0);
         while (initiated < nr && current_depth < iodepth) {
-            io_prep_pwrite(&iocbs[i++], fd, buf, bufsize, bufsize*initiated++);
+            if (dir == direction::write) {
+                io_prep_pwrite(&iocbs[i++], fd, buf, bufsize, bufsize*initiated++);
+            } else {
+                io_prep_pread(&iocbs[i++], fd, buf, bufsize, bufsize*initiated++);
+            }
             ++current_depth;
         }
         std::shuffle(iocbs.begin(), iocbs.begin() + i, random_device);
@@ -103,7 +112,8 @@ void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, 
     if (dsync) {
         mode += ", O_DSYNC";
     }
-    std::cout << "context switch per io (" << mode << ", iodepth " << iodepth << "): " << rate
+    auto iotype = dir == direction::read ? "read" : "write";
+    std::cout << "context switch per " << iotype << " io (" << mode << ", iodepth " << iodepth << "): " << rate
           << " (" << verdict << ")\n";
     auto ptr = mmap(nullptr, nr * 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
     auto incore = std::vector<uint8_t>(nr);
@@ -150,13 +160,23 @@ int main(int ac, char** av) {
     std::cout << "disk DMA alignment:      " << info.disk_alignment << "\n";
     std::cout << "filesystem block size:   " << bsize << "\n";
 
-    run_test(1, bsize, false, false, false);
-    run_test(3, bsize, false, false, false);
-    run_test(3, bsize, true, false, false);
-    run_test(7, bsize, true, false, false);
-    run_test(1, info.disk_alignment, true, false, false);
-    run_test(1, info.disk_alignment, true, true, false);
-    run_test(1, info.disk_alignment, true, true, true);
-    run_test(3, info.disk_alignment, true, true, true);
+    run_test(1, bsize, false, false, false, direction::write);
+    run_test(3, bsize, false, false, false, direction::write);
+    run_test(3, bsize, true, false, false, direction::write);
+    run_test(7, bsize, true, false, false, direction::write);
+    run_test(1, info.disk_alignment, true, false, false, direction::write);
+    run_test(1, info.disk_alignment, true, true, false, direction::write);
+    run_test(1, info.disk_alignment, true, true, true, direction::write);
+    run_test(3, info.disk_alignment, true, true, true, direction::write);
+    run_test(3, info.disk_alignment, true, true, true, direction::write);
+    run_test(1, bsize, false, false, false, direction::write);
+    run_test(3, bsize, false, false, false, direction::write);
+    run_test(3, bsize, true, false, false, direction::write);
+    run_test(7, bsize, true, false, false, direction::write);
+    run_test(1, info.disk_alignment, true, false, false, direction::write);
+    run_test(1, info.disk_alignment, true, true, false, direction::write);
+    run_test(1, info.disk_alignment, true, true, true, direction::write);
+    run_test(3, info.disk_alignment, true, true, true, direction::write);
+    run_test(30, info.disk_alignment, false, false, false, direction::read);
     return 0;
 }
