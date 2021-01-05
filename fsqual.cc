@@ -41,11 +41,12 @@ with_ctxsw_counting(Counter& counter, Func&& func) {
     return func();
 }
 
-void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero) {
+void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, bool dsync) {
     io_context_t ioctx = {};
     io_setup(128, &ioctx);
     auto fname = "fsqual.tmp";
-    int fd = open(fname, O_CREAT|O_EXCL|O_RDWR|O_DIRECT, 0600);
+    auto o_dsync = dsync ? O_DSYNC : 0;
+    int fd = open(fname, O_CREAT|O_EXCL|O_RDWR|O_DIRECT|o_dsync, 0600);
     fsxattr attr = {};
     attr.fsx_xflags |= XFS_XFLAG_EXTSIZE;
     attr.fsx_extsize = 32 << 20; // 32MB
@@ -96,6 +97,9 @@ void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero) 
         mode += ", prezero";
     }
     mode += ", blocksize " + std::to_string(bufsize);
+    if (dsync) {
+        mode += ", O_DSYNC";
+    }
     std::cout << "context switch per appending io (mode " << mode << ", iodepth " << iodepth << "): " << rate
           << " (" << verdict << ")\n";
     auto ptr = mmap(nullptr, nr * 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
@@ -135,11 +139,13 @@ int main(int ac, char** av) {
     std::cout << "memory DMA alignment:    " << info.memory_alignment << "\n";
     std::cout << "disk DMA alignment:      " << info.disk_alignment << "\n";
 
-    run_test(1, 4096, false, false);
-    run_test(3, 4096, false, false);
-    run_test(3, 4096, true, false);
-    run_test(7, 4096, true, false);
-    run_test(1, info.disk_alignment, true, false);
-    run_test(1, info.disk_alignment, true, true);
+    run_test(1, 4096, false, false, false);
+    run_test(3, 4096, false, false, false);
+    run_test(3, 4096, true, false, false);
+    run_test(7, 4096, true, false, false);
+    run_test(1, info.disk_alignment, true, false, false);
+    run_test(1, info.disk_alignment, true, true, false);
+    run_test(1, info.disk_alignment, true, true, true);
+    run_test(3, info.disk_alignment, true, true, true);
     return 0;
 }
