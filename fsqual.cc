@@ -79,7 +79,8 @@ void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, 
         fdatasync(fd);
         free(buf);
     }
-    std::random_device random_device;
+    static thread_local std::random_device s_random_device;
+    std::default_random_engine random_engine(s_random_device());
     while (completed < nr) {
         auto i = unsigned(0);
         while (initiated < nr && current_depth < iodepth) {
@@ -90,7 +91,7 @@ void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, 
             }
             ++current_depth;
         }
-        std::shuffle(iocbs.begin(), iocbs.begin() + i, random_device);
+        std::shuffle(iocbs.begin(), iocbs.begin() + i, random_engine);
         if (i) {
             with_ctxsw_counting(ctxsw, [&] {
                 io_submit(ioctx, i, iocbps.data());
