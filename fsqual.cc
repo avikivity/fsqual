@@ -102,7 +102,7 @@ void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, 
     if (dsync) {
         mode += ", O_DSYNC";
     }
-    std::cout << "context switch per io (mode " << mode << ", iodepth " << iodepth << "): " << rate
+    std::cout << "context switch per io (" << mode << ", iodepth " << iodepth << "): " << rate
           << " (" << verdict << ")\n";
     auto ptr = mmap(nullptr, nr * 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
     auto incore = std::vector<uint8_t>(nr);
