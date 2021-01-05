@@ -6,9 +6,12 @@ Linux AIO is notoriously bad; but it is hard to understand what the weaknesses o
 
 See this [blog post](http://www.scylladb.com/2016/02/09/qualifying-filesystems/) for more information.
 
-Currently tested attributes are:
- * Asycnhronous appending write
- * Asycnhronous allocating, but non-appending write
+The test matrix checks the following variations:
+ * Whether the write changes the size of the file or not
+ * Whether the write first touches its offset range, or alternatively overwrites already-written data
+ * Whether the write uses sector granularity (typically 512 bytes) or block granularity (typically 4096 bytes)
+ * Whether the writes happen concurrently, or only one at a time
+ * Whether O_DSYNC is in use (as is typical for commitlogs) or not
 
 ## Building
 
@@ -26,3 +29,4 @@ To build, simply run
 
 Change to a directory under the mountpoint to be tested, and run `fsqual`.
 
+`fsqual` will report, for each test scenario, whether `io_submit` was truly asynchronous. This is done by measuring context switches during the `io_submit` call.
