@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <random>
 #include <stdint.h>
+#include <sys/vfs.h>
 #define min min    /* prevent xfs.h from defining min() as a macro */
 #include <xfs/xfs.h>
 
@@ -136,15 +137,23 @@ dio_info get_dio_info() {
     return dio_info{da.d_mem, da.d_miniosz};
 }
 
+unsigned get_blocksize() {
+    struct statfs s;
+    statfs(".", &s);
+    return s.f_bsize;
+}
+
 int main(int ac, char** av) {
     auto info = get_dio_info();
+    auto bsize = get_blocksize();
     std::cout << "memory DMA alignment:    " << info.memory_alignment << "\n";
     std::cout << "disk DMA alignment:      " << info.disk_alignment << "\n";
+    std::cout << "filesystem block size:   " << bsize << "\n";
 
-    run_test(1, 4096, false, false, false);
-    run_test(3, 4096, false, false, false);
-    run_test(3, 4096, true, false, false);
-    run_test(7, 4096, true, false, false);
+    run_test(1, bsize, false, false, false);
+    run_test(3, bsize, false, false, false);
+    run_test(3, bsize, true, false, false);
+    run_test(7, bsize, true, false, false);
     run_test(1, info.disk_alignment, true, false, false);
     run_test(1, info.disk_alignment, true, true, false);
     run_test(1, info.disk_alignment, true, true, true);
