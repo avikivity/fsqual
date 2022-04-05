@@ -169,15 +169,6 @@ int main(int ac, char** av) {
     run_test(1, info.disk_alignment, true, true, false, direction::write);
     run_test(1, info.disk_alignment, true, true, true, direction::write);
     run_test(3, info.disk_alignment, true, true, true, direction::write);
-    run_test(3, info.disk_alignment, true, true, true, direction::write);
-    run_test(1, bsize, false, false, false, direction::write);
-    run_test(3, bsize, false, false, false, direction::write);
-    run_test(3, bsize, true, false, false, direction::write);
-    run_test(7, bsize, true, false, false, direction::write);
-    run_test(1, info.disk_alignment, true, false, false, direction::write);
-    run_test(1, info.disk_alignment, true, true, false, direction::write);
-    run_test(1, info.disk_alignment, true, true, true, direction::write);
-    run_test(3, info.disk_alignment, true, true, true, direction::write);
     run_test(30, info.disk_alignment, false, false, false, direction::read);
     return 0;
 }
