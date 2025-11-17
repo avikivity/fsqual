@@ -21,6 +21,8 @@
 #define min min    /* prevent xfs.h from defining min() as a macro */
 #include <xfs/xfs.h>
 
+#include <tabulate/table.hpp>
+
 template <typename Counter, typename Func>
 typename std::result_of<Func()>::type
 with_ctxsw_counting(Counter& counter, Func&& func) {
@@ -47,7 +49,14 @@ enum class direction {
     write,
 };
 
-void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, bool dsync, direction dir) {
+struct result {
+    float ctxsw_per_io;
+    std::string verdict;
+    bool pgcache;
+};
+
+result
+run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, bool dsync, direction dir) {
     io_context_t ioctx = {};
     io_setup(128, &ioctx);
     auto fname = "fsqual.tmp";
@@ -103,27 +112,13 @@ void run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, 
     }
     auto rate = float(ctxsw) / nr;
     auto verdict = rate < 0.1 ? "GOOD" : "BAD";
-    auto mode = std::string(pretruncate ? "size-unchanging" : "size-changing");
-    if (prezero) {
-        mode += ", overwrite";
-    } else {
-        mode += ", append";
-    }
-    mode += ", blocksize " + std::to_string(bufsize);
-    if (dsync) {
-        mode += ", O_DSYNC";
-    }
-    auto iotype = dir == direction::read ? "read" : "write";
-    std::cout << "context switch per " << iotype << " io (" << mode << ", iodepth " << iodepth << "): " << rate
-          << " (" << verdict << ")\n";
     auto ptr = mmap(nullptr, nr * 4096, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
     auto incore = std::vector<uint8_t>(nr);
     mincore(ptr, nr * 4096, incore.data());
-    if (std::any_of(incore.begin(), incore.end(), [] (uint8_t m) { return m & 1; })) {
-        std::cout << "Seen data in page cache (BAD)\n";
-    }
+    auto pgcache = std::any_of(incore.begin(), incore.end(), [] (uint8_t m) { return m & 1; });
     close(fd);
     io_destroy(ioctx);
+    return result{rate, verdict, pgcache};
 }
 
 struct dio_info {
@@ -161,6 +156,25 @@ int main(int ac, char** av) {
     std::cout << "disk DMA alignment:      " << info.disk_alignment << "\n";
     std::cout << "filesystem block size:   " << bsize << "\n";
 
+    tabulate::Table results;
+
+    results.add_row({"iodepth", "bufsize", "pretruncate", "prezero", "dsync", "direction", "ctxsw/io", "verdict", "pgcache"});
+
+    auto run_test = [&results] (unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, bool dsync, direction dir) {
+        auto r = ::run_test(iodepth, bufsize, pretruncate, prezero, dsync, dir);
+        results.add_row({
+            std::to_string(iodepth),
+            std::to_string(bufsize),
+            pretruncate ? "yes" : "no",
+            prezero ? "yes" : "no",
+            dsync ? "yes" : "no",
+            dir == direction::write ? "write" : "read",
+            std::to_string(r.ctxsw_per_io),
+            r.verdict,
+            r.pgcache ? "yes" : "no",
+        });
+    };
+
     run_test(1, bsize, false, false, false, direction::write);
     run_test(3, bsize, false, false, false, direction::write);
     run_test(3, bsize, true, false, false, direction::write);
@@ -179,5 +193,8 @@ int main(int ac, char** av) {
     run_test(1, info.disk_alignment, true, true, true, direction::write);
     run_test(3, info.disk_alignment, true, true, true, direction::write);
     run_test(30, info.disk_alignment, false, false, false, direction::read);
+
+    std::cout << results << "\n";
+
     return 0;
 }
