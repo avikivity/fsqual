@@ -27,7 +27,7 @@ template <typename Counter, typename Func>
 typename std::result_of<Func()>::type
 with_ctxsw_counting(long (rusage::* field), Counter& counter, Func&& func) {
     struct count_guard {
-        long (rusage::*field);
+        long rusage::*field;
         Counter& counter;
         count_guard(long rusage::*field, Counter& counter) : field(field), counter(counter) {
             counter -= nvcsw();
@@ -172,6 +172,8 @@ unsigned get_blocksize() {
 }
 
 int main(int ac, char** av) {
+    (void)ac;
+    (void)av;
     auto info = get_dio_info();
     auto bsize = get_blocksize();
     std::cout << "memory DMA alignment:    " << info.memory_alignment << "\n";
