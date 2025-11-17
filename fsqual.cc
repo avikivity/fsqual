@@ -25,23 +25,36 @@
 
 template <typename Counter, typename Func>
 typename std::result_of<Func()>::type
-with_ctxsw_counting(Counter& counter, Func&& func) {
+with_ctxsw_counting(long (rusage::* field), Counter& counter, Func&& func) {
     struct count_guard {
+        long (rusage::*field);
         Counter& counter;
-        count_guard(Counter& counter) : counter(counter) {
+        count_guard(long rusage::*field, Counter& counter) : field(field), counter(counter) {
             counter -= nvcsw();
         }
         ~count_guard() {
             counter += nvcsw();
         }
-        static Counter nvcsw() {
+        Counter nvcsw() {
             struct rusage usage;
             getrusage(RUSAGE_THREAD, &usage);
-            return usage.ru_nvcsw;
+            return usage.*field;
         }
     };
-    count_guard g(counter);
+    count_guard g(field, counter);
     return func();
+}
+
+template <typename Counter, typename Func>
+typename std::result_of<Func()>::type
+with_ctxsw_counting(Counter& counter, Func&& func) {
+    return with_ctxsw_counting(&rusage::ru_nvcsw, counter, std::forward<Func>(func));
+}
+
+template <typename Counter, typename Func>
+typename std::result_of<Func()>::type
+with_involuntary_ctxsw_counting(Counter& counter, Func&& func) {
+    return with_ctxsw_counting(&rusage::ru_nivcsw, counter, std::forward<Func>(func));
 }
 
 enum class direction {
@@ -53,6 +66,7 @@ struct result {
     float ctxsw_per_io;
     std::string verdict;
     bool pgcache;
+    float ctxsw_background_per_io;
 };
 
 result
@@ -73,6 +87,7 @@ run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, bool 
     }
     auto nr = 10000;
     auto ctxsw = 0;
+    auto ctxsw_background = 0;
     auto buf = aligned_alloc(4096, bufsize);
     auto current_depth = unsigned(0);
     auto initiated = 0;
@@ -106,7 +121,14 @@ run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, bool 
                 io_submit(ioctx, i, iocbps.data());
             });
         }
-        auto n = io_getevents(ioctx, 1, iodepth, ioevs.data(), nullptr);
+        auto n = with_involuntary_ctxsw_counting(ctxsw_background, [&] {
+            while (true) {
+                auto nr = io_getevents(ioctx, 0, iodepth, ioevs.data(), nullptr);
+                if (nr > 0) {
+                    return nr;
+                }
+            }
+        });
         current_depth -= n;
         completed += n;
     }
@@ -118,7 +140,7 @@ run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, bool 
     auto pgcache = std::any_of(incore.begin(), incore.end(), [] (uint8_t m) { return m & 1; });
     close(fd);
     io_destroy(ioctx);
-    return result{rate, verdict, pgcache};
+    return result{rate, verdict, pgcache, float(ctxsw_background) / nr};
 }
 
 struct dio_info {
@@ -158,7 +180,7 @@ int main(int ac, char** av) {
 
     tabulate::Table results;
 
-    results.add_row({"iodepth", "bufsize", "pretruncate", "prezero", "dsync", "direction", "ctxsw/io", "verdict", "pgcache"});
+    results.add_row({"iodepth", "bufsize", "pretruncate", "prezero", "dsync", "direction", "ctxsw/io", "bg ctxtsw/io", "verdict", "pgcache"});
 
     auto run_test = [&results] (unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, bool dsync, direction dir) {
         auto r = ::run_test(iodepth, bufsize, pretruncate, prezero, dsync, dir);
@@ -170,6 +192,7 @@ int main(int ac, char** av) {
             dsync ? "yes" : "no",
             dir == direction::write ? "write" : "read",
             std::to_string(r.ctxsw_per_io),
+            std::to_string(r.ctxsw_background_per_io),
             r.verdict,
             r.pgcache ? "yes" : "no",
         });
