@@ -187,14 +187,14 @@ int main(int ac, char** av) {
         results.add_row({
             std::to_string(iodepth),
             std::to_string(bufsize),
-            pretruncate ? "yes" : "no",
-            prezero ? "yes" : "no",
-            dsync ? "yes" : "no",
-            dir == direction::write ? "write" : "read",
+            pretruncate ? "TRUNC" : "-",
+            prezero ? "PREFILL" : "-",
+            dsync ? "DSYNC" : "-",
+            dir == direction::write ? "W" : "R",
             std::to_string(r.ctxsw_per_io),
             std::to_string(r.ctxsw_background_per_io),
             r.verdict,
-            r.pgcache ? "yes" : "no",
+            r.pgcache ? "pgcache" : "-",
         });
     };
 
