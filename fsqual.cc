@@ -16,6 +16,7 @@
 #include <vector>
 #include <algorithm>
 #include <random>
+#include <cstdlib>
 #include <stdint.h>
 #include <sys/vfs.h>
 #define min min    /* prevent xfs.h from defining min() as a macro */
@@ -57,10 +58,23 @@ with_involuntary_ctxsw_counting(Counter& counter, Func&& func) {
     return with_ctxsw_counting(&rusage::ru_nivcsw, counter, std::forward<Func>(func));
 }
 
-enum class direction {
+enum class operation {
     read,
-    write,
+    overwrite,
+    append,
+    fill, // write to previously unwritten area, but without changing size
 };
+
+std::string
+to_string(operation op) {
+    switch (op) {
+    case operation::read: return "read";
+    case operation::overwrite: return "overwrite";
+    case operation::append: return "append";
+    case operation::fill: return "fill";
+    }
+    std::abort();
+}
 
 struct result {
     float ctxsw_per_io;
@@ -70,7 +84,10 @@ struct result {
 };
 
 result
-run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, bool dsync, direction dir) {
+run_test(unsigned iodepth, size_t bufsize, operation op, bool dsync) {
+    bool pretruncate = op != operation::append;
+    bool prezero = op == operation::read || op == operation::overwrite;
+    bool read = op == operation::read;
     io_context_t ioctx = {};
     io_setup(128, &ioctx);
     auto fname = "fsqual.tmp";
@@ -96,7 +113,7 @@ run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, bool 
     auto iocbps = std::vector<iocb*>(iodepth);
     std::iota(iocbps.begin(), iocbps.end(), iocbs.data());
     auto ioevs = std::vector<io_event>(iodepth);
-    if (prezero || dir == direction::read) {
+    if (prezero) {
         auto buf = reinterpret_cast<char*>(aligned_alloc(4096, nr*bufsize));
         std::fill_n(buf, nr*bufsize, char(0));
         write(fd, buf, nr*bufsize);
@@ -108,7 +125,7 @@ run_test(unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, bool 
     while (completed < nr) {
         auto i = unsigned(0);
         while (initiated < nr && current_depth < iodepth) {
-            if (dir == direction::write) {
+            if (!read) {
                 io_prep_pwrite(&iocbs[i++], fd, buf, bufsize, bufsize*initiated++);
             } else {
                 io_prep_pread(&iocbs[i++], fd, buf, bufsize, bufsize*initiated++);
@@ -182,17 +199,15 @@ int main(int ac, char** av) {
 
     tabulate::Table results;
 
-    results.add_row({"iodepth", "bufsize", "pretruncate", "prezero", "dsync", "direction", "ctxsw/io", "bg ctxtsw/io", "verdict", "pgcache"});
+    results.add_row({"iodepth", "bufsize", "operation", "dsync", "ctxsw/io", "bg ctxtsw/io", "verdict", "pgcache"});
 
-    auto run_test = [&results] (unsigned iodepth, size_t bufsize, bool pretruncate, bool prezero, bool dsync, direction dir) {
-        auto r = ::run_test(iodepth, bufsize, pretruncate, prezero, dsync, dir);
+    auto run_test = [&results] (unsigned iodepth, size_t bufsize, operation op, bool dsync) {
+        auto r = ::run_test(iodepth, bufsize, op, dsync);
         results.add_row({
             std::to_string(iodepth),
             std::to_string(bufsize),
-            pretruncate ? "TRUNC" : "-",
-            prezero ? "PREFILL" : "-",
+            to_string(op),
             dsync ? "DSYNC" : "-",
-            dir == direction::write ? "W" : "R",
             std::to_string(r.ctxsw_per_io),
             std::to_string(r.ctxsw_background_per_io),
             r.verdict,
@@ -200,24 +215,24 @@ int main(int ac, char** av) {
         });
     };
 
-    run_test(1, bsize, false, false, false, direction::write);
-    run_test(3, bsize, false, false, false, direction::write);
-    run_test(3, bsize, true, false, false, direction::write);
-    run_test(7, bsize, true, false, false, direction::write);
-    run_test(1, info.disk_alignment, true, false, false, direction::write);
-    run_test(1, info.disk_alignment, true, true, false, direction::write);
-    run_test(1, info.disk_alignment, true, true, true, direction::write);
-    run_test(3, info.disk_alignment, true, true, true, direction::write);
-    run_test(3, info.disk_alignment, true, true, true, direction::write);
-    run_test(1, bsize, false, false, false, direction::write);
-    run_test(3, bsize, false, false, false, direction::write);
-    run_test(3, bsize, true, false, false, direction::write);
-    run_test(7, bsize, true, false, false, direction::write);
-    run_test(1, info.disk_alignment, true, false, false, direction::write);
-    run_test(1, info.disk_alignment, true, true, false, direction::write);
-    run_test(1, info.disk_alignment, true, true, true, direction::write);
-    run_test(3, info.disk_alignment, true, true, true, direction::write);
-    run_test(30, info.disk_alignment, false, false, false, direction::read);
+    run_test(1, bsize, operation::append, false);
+    run_test(3, bsize, operation::append, false);
+    run_test(3, bsize, operation::fill, false);
+    run_test(7, bsize, operation::fill, false);
+    run_test(1, info.disk_alignment, operation::fill, false);
+    run_test(1, info.disk_alignment, operation::overwrite, false);
+    run_test(1, info.disk_alignment, operation::overwrite, true);
+    run_test(3, info.disk_alignment, operation::overwrite, true);
+    run_test(3, info.disk_alignment, operation::overwrite, true);
+    run_test(1, bsize, operation::append, false);
+    run_test(3, bsize, operation::append, false);
+    run_test(3, bsize, operation::fill, false);
+    run_test(7, bsize, operation::fill, false);
+    run_test(1, info.disk_alignment, operation::fill, false);
+    run_test(1, info.disk_alignment, operation::overwrite, false);
+    run_test(1, info.disk_alignment, operation::overwrite, true);
+    run_test(3, info.disk_alignment, operation::overwrite, true);
+    run_test(30, info.disk_alignment, operation::read, false);
 
     std::cout << results << "\n";
 
