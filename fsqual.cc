@@ -19,6 +19,8 @@
 #include <cstdlib>
 #include <stdint.h>
 #include <sys/vfs.h>
+#include <thread>
+#include <chrono>
 #define min min    /* prevent xfs.h from defining min() as a macro */
 #include <xfs/xfs.h>
 
@@ -160,6 +162,55 @@ run_test(unsigned iodepth, size_t bufsize, operation op, bool dsync) {
     return result{rate, verdict, pgcache, float(ctxsw_background) / nr};
 }
 
+void run_nowait_test(size_t bufsize) {
+    io_context_t ioctx = {};
+    io_setup(128, &ioctx);
+    auto fname = "fsqual.tmp";
+    int fd = open(fname, O_CREAT|O_EXCL|O_RDWR|O_DIRECT, 0600);
+    fsxattr attr = {};
+    attr.fsx_xflags |= XFS_XFLAG_EXTSIZE;
+    attr.fsx_extsize = 32 << 20; // 32MB
+    // Ignore error; may be !xfs, and just a hint anyway
+    ::ioctl(fd, XFS_IOC_FSSETXATTR, &attr);
+    unlink(fname);
+    ftruncate(fd, off_t(1) << 30);
+
+    auto nr = 1000;
+    auto buf = aligned_alloc(4096, bufsize);
+    auto done = 0;
+    auto eagains = 0;
+    iocb cb;
+
+    while (done < nr) {
+        io_prep_pwrite(&cb, fd, buf, bufsize, bufsize * done);
+        iocb* cbp = &cb;
+        cb.aio_rw_flags |= RWF_NOWAIT;
+        io_submit(ioctx, 1, &cbp);
+        while (true) {
+            io_event ev;
+            auto nr = io_getevents(ioctx, 0, 1, &ev, nullptr);
+            if (nr == 0) {
+                continue;
+            }
+            if (ev.res == -EAGAIN) {
+                eagains++;
+                cb.aio_rw_flags &= ~RWF_NOWAIT;
+                io_submit(ioctx, 1, &cbp);
+                continue;
+            }
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        done++;
+    }
+    close(fd);
+    io_destroy(ioctx);
+    tabulate::Table results;
+    results.add_row({"total", "retries", "verdict"});
+    results.add_row({std::to_string(done), std::to_string(eagains), eagains <= 1 ? "GOOD" : "BAD"});
+    std::cout << results << '\n';
+}
+
 struct dio_info {
     size_t memory_alignment;
     size_t disk_alignment;
@@ -198,6 +249,8 @@ int main(int ac, char** av) {
     std::cout << "filesystem block size:   " << bsize << "\n";
 
     tabulate::Table results;
+
+    run_nowait_test(bsize);
 
     results.add_row({"iodepth", "bufsize", "operation", "dsync", "ctxsw/io", "bg ctxtsw/io", "verdict", "pgcache"});
 
